@@ -76,7 +76,8 @@ builder.Services
             ValidIssuer              = jwtIssuer,
             ValidAudience            = jwtAudience,
             IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-            ClockSkew                = TimeSpan.Zero
+            ClockSkew                = TimeSpan.FromMinutes(5)
+
         };
         // SignalR a besoin du token depuis la query string
         opt.Events = new JwtBearerEvents
