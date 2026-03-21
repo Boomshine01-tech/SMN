@@ -61,7 +61,9 @@ public class AuthService : IAuthService
 
     public string GenerateToken(User user, bool rememberMe = false)
     {
-        var secret  = _cfg["Jwt:Secret"] ?? throw new InvalidOperationException("JWT secret manquant.");
+        var secret = Environment.GetEnvironmentVariable("JWT_SECRET")
+             ?? _cfg["Jwt:Secret"]
+             ?? throw new InvalidOperationException("JWT_SECRET manquant.");
         var key     = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds   = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var hours   = rememberMe ? 720 : 168;
