@@ -50,13 +50,47 @@ public class VideoController : ControllerBase
     }
 
     [HttpGet("stream/{userId}/{fileName}")]
-    public IActionResult Stream(int userId, string fileName)
+    [AllowAnonymous]
+    public IActionResult Stream(int userId, string fileName, [FromQuery] string? t)
     {
-        if (userId != Uid) return Forbid();
-        if (fileName.Contains("..") || fileName.Contains('/') || fileName.Contains('\\')) return BadRequest();
-        var path = Path.Combine(_env.ContentRootPath, "videos", userId.ToString(), fileName);
+        if (string.IsNullOrEmpty(t)) return Unauthorized();
+            if (fileName.Contains("..") || fileName.Contains('/') || fileName.Contains('\\'))
+            return BadRequest();
+
+        // Valider le token et extraire le userId
+        var secret = Environment.GetEnvironmentVariable("JWT_SECRET")
+                     ?? _config["Jwt:Secret"] ?? "";
+        try
+        {
+            var handler    = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            var key        = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                                 System.Text.Encoding.UTF8.GetBytes(secret));
+            handler.ValidateToken(t, new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey         = key,
+                ValidateIssuer           = false,
+                ValidateAudience         = false,
+                ClockSkew                = System.TimeSpan.FromMinutes(5)
+            }, out var validated);
+
+            // Extraire userId depuis le token
+            var jwt      = (System.IdentityModel.Tokens.Jwt.JwtSecurityToken)validated;
+            var tokenUid = jwt.Claims
+                .FirstOrDefault(c => c.Type == "sub" ||
+                                     c.Type == System.Security.Claims.ClaimTypes.NameIdentifier)
+                ?.Value;
+
+            if (tokenUid != userId.ToString()) return Forbid();
+        }
+        catch { return Unauthorized(); }
+
+        var path = System.IO.Path.Combine(
+            _env.ContentRootPath, "videos", userId.ToString(), fileName);
         if (!System.IO.File.Exists(path)) return NotFound();
-        new FileExtensionContentTypeProvider().TryGetContentType(fileName, out var ct);
+
+        new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider()
+            .TryGetContentType(fileName, out var ct);
         return PhysicalFile(path, ct ?? "video/webm", enableRangeProcessing: true);
     }
 
