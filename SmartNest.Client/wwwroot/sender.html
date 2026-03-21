@@ -163,6 +163,10 @@ async function start() {
     ROOM_ID = room;
     TOKEN   = token;
 
+    await loadIceFromServer();  // ← ajouter ici
+
+    var ok = await SmartNestWebRTC.initSender(ROOM_ID, TOKEN, fakeRef);
+    
     // 1. Afficher la carte stream AVANT d'accéder aux boutons
     document.getElementById("cfg-card").style.display    = "none";
     document.getElementById("stream-card").style.display = "block";
@@ -211,6 +215,26 @@ async function stop() {
     document.getElementById("cfg-card").style.display    = "block";
     document.getElementById("stream-card").style.display = "none";
     addLog("⏹ Diffusion arrêtée");
+}
+// Remplacez le tableau ICE statique par ce chargement dynamique
+var ICE_LOADED = false;
+
+async function loadIceFromServer() {
+    if (ICE_LOADED) return;
+    try {
+        var r = await fetch(location.origin + "/api/webrtc/ice-servers", {
+            headers: { "Authorization": "Bearer " + TOKEN }
+        });
+        if (r.ok) {
+            var servers = await r.json();
+            // Injecter dans webrtc.js
+            window._smn_ice_servers = servers;
+            ICE_LOADED = true;
+            addLog("ICE servers chargés (" + servers.length + ")");
+        }
+    } catch(e) {
+        addLog("ICE fallback (openrelay)");
+    }
 }
 
 // Auto-démarrage si token et room présents dans l'URL
