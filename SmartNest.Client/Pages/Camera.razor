@@ -169,6 +169,16 @@
     {
         _ref = DotNetObjectReference.Create(this);
         _connecting = true;
+        await Task.Delay(300);
+        if (string.IsNullOrEmpty(Auth.Username))
+        {
+            AddEvent("❌ Utilisateur non authentifié");
+            _connecting = false;
+            return;
+        }
+
+        AddEvent("Room: " + Auth.Username);  // ← vérifier la valeur
+        StateHasChanged();
         try { await JS.InvokeVoidAsync("SmartNestWebRTC.initViewer", Auth.Username, Auth.Token, _ref); }
         catch (Exception ex) { AddEvent($"Erreur: {ex.Message}"); _connecting = false; }
     }
