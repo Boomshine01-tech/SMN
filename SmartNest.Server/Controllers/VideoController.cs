@@ -10,6 +10,7 @@ namespace SmartNest.Server.Controllers;
 public class VideoController : ControllerBase
 {
     private readonly IWebHostEnvironment   _env;
+    private readonly IConfiguration  _config;
     private readonly ILogger<VideoController> _log;
 
     private int    Uid      => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
