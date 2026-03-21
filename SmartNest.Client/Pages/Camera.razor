@@ -114,7 +114,7 @@
                 <button class="btn-outline btn-sm" @onclick="() => _selected = null">Fermer</button>
             </div>
             <video controls autoplay class="history-player"
-                   src="@(Nav.BaseUri.TrimEnd('/') + _selected.Url)"></video>
+                   src="@(Nav.BaseUri.TrimEnd('/') + _selected.Url + "?t=" + Auth.Token)"></video>
             <div class="player-meta">
                 <span>@_selected.RecordedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</span>
                 <span>@_selected.FormattedSize</span>
