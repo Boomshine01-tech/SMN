@@ -1,0 +1,242 @@
+@page "/camera"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.JSInterop
+@using SmartNest.Client.Services
+@using SmartNest.Shared.DTOs
+@inject AuthenticationService Auth
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject VideoService VideoSvc
+@implements IAsyncDisposable
+
+<div class="page-header">
+    <div class="page-header-text"><h1>Surveillance vidéo</h1><p>Diffusion WebRTC en temps réel et historique</p></div>
+    <button class="btn-outline" @onclick="Refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-7"/></svg>
+        Actualiser
+    </button>
+</div>
+
+<div class="cam-tabs">
+    <button class="@(_tab == "live" ? "active" : "")" @onclick='() => _tab = "live"'>
+        En direct @if (_live) { <span class="live-badge">LIVE</span> }
+    </button>
+    <button class="@(_tab == "history" ? "active" : "")" @onclick='async () => { _tab = "history"; await LoadHistory(); }'>
+        Enregistrements @if (_recs.Any()) { <span class="count-chip">@_recs.Count</span> }
+    </button>
+</div>
+
+@if (_tab == "live")
+{
+    <div class="cam-grid">
+        <div class="cam-main">
+            <div class="cam-statusbar">
+                <span class="stream-pill @(_live ? "live" : _connecting ? "connecting" : "offline")">
+                    @if (_live) { <span class="stream-dot"></span><text>EN DIRECT</text> }
+                    else if (_connecting) { <text>Connexion…</text> }
+                    else { <text>Hors ligne</text> }
+                </span>
+                @if (_live) { <span class="cam-meta">WebRTC · @_connType</span> }
+            </div>
+
+            <div class="cam-viewport">
+                <video id="remote-video" autoplay playsinline class="cam-video"></video>
+                @if (!_live)
+                {
+                    <div class="cam-overlay">
+                        @if (_connecting)
+                        {
+                            <div class="cam-overlay-content">
+                                <div class="cam-spinner"></div>
+                                <p>En attente du signal caméra…</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="cam-overlay-content">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="48" height="48" opacity=".3"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                                <p>Aucun signal</p>
+                                <small>Ouvrez la page émetteur sur votre appareil caméra</small>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="cam-side">
+            <div class="card">
+                <div class="card-header"><h3>Appareil émetteur</h3></div>
+                <p class="text-muted mb-3" style="font-size:.82rem">Ouvrez cette URL sur l'appareil équipé de la webcam.</p>
+                <button class="btn-primary w-full" @onclick="OpenSender">Ouvrir la page émetteur →</button>
+                <div class="sender-url-box">
+                    <span class="sender-url-label">URL directe</span>
+                    <code>@GetSenderUrl()</code>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>Événements</h3></div>
+                <div class="event-log">
+                    @foreach (var e in _events.TakeLast(10).Reverse())
+                    {
+                        <div class="event-row">
+                            <span class="event-time">@e.t</span>
+                            <span>@e.msg</span>
+                        </div>
+                    }
+                    @if (!_events.Any()) { <p class="text-muted" style="font-size:.78rem">Aucun événement</p> }
+                </div>
+            </div>
+
+            @if (_live)
+            {
+                <div class="card">
+                    <div class="card-header"><h3>Connexion</h3></div>
+                    <div class="conn-grid">
+                        <span>Mode</span><strong>@_connType</strong>
+                        <span>Codec</span><strong>VP8/VP9 · Opus</strong>
+                        <span>Latence</span><strong>@(_connType.Contains("relay") ? "~150ms" : "~60ms")</strong>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (_tab == "history")
+{
+    @if (_selected != null)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h3>@_selected.FileName</h3>
+                <button class="btn-outline btn-sm" @onclick="() => _selected = null">Fermer</button>
+            </div>
+            <video controls autoplay class="history-player"
+                   src="@(Nav.BaseUri.TrimEnd('/') + _selected.Url)"></video>
+            <div class="player-meta">
+                <span>@_selected.RecordedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</span>
+                <span>@_selected.FormattedSize</span>
+            </div>
+        </div>
+    }
+
+    @if (_loadingHistory)
+    {
+        <div class="kpi-grid"><div class="kpi-skeleton"></div><div class="kpi-skeleton"></div><div class="kpi-skeleton"></div></div>
+    }
+    else if (!_recs.Any())
+    {
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M10 8l6 4-6 4V8z"/></svg>
+            <p>Aucun enregistrement</p>
+            <small>Activez l'enregistrement depuis la page émetteur</small>
+        </div>
+    }
+    else
+    {
+        <div class="recordings-grid">
+            @foreach (var r in _recs)
+            {
+                <div class="rec-card @(_selected?.FileName == r.FileName ? "selected" : "")" @onclick="() => _selected = r">
+                    <div class="rec-thumb">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="32" height="32" opacity=".4"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M10 8l6 4-6 4V8z"/></svg>
+                    </div>
+                    <div class="rec-info">
+                        <span class="rec-name">@r.FileName</span>
+                        <span class="rec-meta">@r.RecordedAt.ToLocalTime().ToString("dd/MM HH:mm") · @r.FormattedSize</span>
+                    </div>
+                    <button class="rec-del" @onclick:stopPropagation="true" @onclick="() => Delete(r)" title="Supprimer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private string _tab = "live";
+    private bool   _live, _connecting, _loadingHistory;
+    private string _connType = "P2P";
+    private VideoRecordingDto?      _selected;
+    private List<VideoRecordingDto> _recs   = new();
+    private List<(string t, string msg)> _events = new();
+    private DotNetObjectReference<Camera>? _ref;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ref = DotNetObjectReference.Create(this);
+        _connecting = true;
+        try { await JS.InvokeVoidAsync("SmartNestWebRTC.initViewer", Auth.Username, Auth.Token, _ref); }
+        catch (Exception ex) { AddEvent($"Erreur: {ex.Message}"); _connecting = false; }
+    }
+
+    [JSInvokable]
+    public void OnWebRtcEvent(string ev, string json)
+    {
+        var d = System.Text.Json.JsonDocument.Parse(json).RootElement;
+        switch (ev)
+        {
+            case "hub-connected":     AddEvent("Hub connecté"); break;
+            case "waiting-sender":    AddEvent("En attente…"); _connecting = true; break;
+            case "peer-joined":       AddEvent("Émetteur connecté"); break;
+            case "peer-left":         AddEvent("Émetteur déconnecté"); _live = false; _connecting = false; break;
+            case "stream-received":   AddEvent("Flux vidéo reçu"); _live = true; _connecting = false; break;
+            case "connection-state":
+                var st = d.GetProperty("state").GetString() ?? "";
+                if (st == "connected") { _live = true; _connecting = false; }
+                if (st is "disconnected" or "failed") { _live = false; }
+                break;
+            case "connection-type":
+                var ct = d.GetProperty("type").GetString() ?? "";
+                _connType = ct.Contains("relay") ? "TURN relay" : "Direct P2P";
+                AddEvent($"Connexion : {_connType}");
+                break;
+            case "recording-saved":
+                AddEvent("Enregistrement sauvegardé");
+                _ = LoadHistory();
+                break;
+            case "error":
+                AddEvent($"Erreur: {d.GetProperty("message").GetString()}");
+                break;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void AddEvent(string msg)
+    {
+        _events.Add((DateTime.Now.ToString("HH:mm:ss"), msg));
+        if (_events.Count > 30) _events.RemoveAt(0);
+    }
+
+    private async Task LoadHistory()
+    {
+        _loadingHistory = true; StateHasChanged();
+        _recs = await VideoSvc.GetListAsync();
+        _loadingHistory = false;
+    }
+
+    private async Task Delete(VideoRecordingDto r)
+    {
+        await VideoSvc.DeleteAsync(r.FileName);
+        _recs.Remove(r);
+        if (_selected?.FileName == r.FileName) _selected = null;
+    }
+
+    private async Task Refresh()
+    {
+        if (!_live) { try { await JS.InvokeVoidAsync("SmartNestWebRTC.requestOffer"); } catch { } }
+        if (_tab == "history") await LoadHistory();
+    }
+
+    private string GetSenderUrl() => $"{Nav.BaseUri.TrimEnd('/')}/sender.html?room={Auth.Username}&token={Auth.Token}";
+    private void OpenSender() => Nav.NavigateTo(GetSenderUrl(), forceLoad: true);
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("SmartNestWebRTC.stopAll"); } catch { }
+        _ref?.Dispose();
+    }
+}

@@ -1,0 +1,175 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using SmartNest.Client.Services
+@using SmartNest.Shared.DTOs
+@inject SensorService    SensorSvc
+@inject ChickService     ChickSvc
+@inject NotificationService NotifSvc
+
+<div class="page-header">
+    <div class="page-header-text">
+        <h1>Tableau de bord</h1>
+        <p>Vue générale en temps réel</p>
+    </div>
+    <button class="btn-outline" @onclick="Load" disabled="@_loading">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-7"/></svg>
+        Actualiser
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="kpi-grid">
+        <div class="kpi-skeleton"></div><div class="kpi-skeleton"></div>
+        <div class="kpi-skeleton"></div><div class="kpi-skeleton"></div>
+    </div>
+}
+else
+{
+    <div class="kpi-grid">
+        <div class="kpi-card @TempClass()">
+            <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+            </div>
+            <div class="kpi-body">
+                <span class="kpi-label">Température</span>
+                <span class="kpi-value">@(_sensor != null ? $"{_sensor.Temperature:F1}°C" : "—")</span>
+                <span class="kpi-sub">@TempSub()</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+            </div>
+            <div class="kpi-body">
+                <span class="kpi-label">Humidité</span>
+                <span class="kpi-value">@(_sensor != null ? $"{_sensor.Humidity:F1}%" : "—")</span>
+                <span class="kpi-sub">Humidité relative</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </div>
+            <div class="kpi-body">
+                <span class="kpi-label">Particules</span>
+                <span class="kpi-value">@(_sensor != null ? $"{_sensor.Dust:F0}" : "—")</span>
+                <span class="kpi-sub">µg/m³</span>
+            </div>
+        </div>
+
+        <div class="kpi-card kpi-accent">
+            <div class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="22" height="22"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3"/></svg>
+            </div>
+            <div class="kpi-body">
+                <span class="kpi-label">Volailles</span>
+                <span class="kpi-value">@(_chick?.Total.ToString() ?? "—")</span>
+                <span class="kpi-sub">@(_chick != null ? $"{_chick.Healthy} saines · {_chick.Sick} malades · {_chick.Danger} critiques" : "Aucun comptage")</span>
+            </div>
+        </div>
+    </div>
+
+    @if (_chick != null && _chick.Total > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h3>Répartition du troupeau</h3></div>
+            <div class="health-bar">
+                <div class="hb-seg hb-healthy" style="width:@Pct(_chick.Healthy, _chick.Total)%" title="Saines : @_chick.Healthy">
+                    @if (_chick.Healthy > 0) { <span>@_chick.Healthy</span> }
+                </div>
+                @if (_chick.Sick > 0)
+                {
+                    <div class="hb-seg hb-sick" style="width:@Pct(_chick.Sick, _chick.Total)%" title="Malades : @_chick.Sick">
+                        <span>@_chick.Sick</span>
+                    </div>
+                }
+                @if (_chick.Danger > 0)
+                {
+                    <div class="hb-seg hb-danger" style="width:@Pct(_chick.Danger, _chick.Total)%" title="Critiques : @_chick.Danger">
+                        <span>@_chick.Danger</span>
+                    </div>
+                }
+            </div>
+            <div class="hb-legend">
+                <span class="hb-dot hb-healthy"></span>Saines (@_chick.Healthy)
+                @if (_chick.Sick > 0) { <span class="hb-dot hb-sick"></span><text>Malades (@_chick.Sick)</text> }
+                @if (_chick.Danger > 0) { <span class="hb-dot hb-danger"></span><text>Critiques (@_chick.Danger)</text> }
+            </div>
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-header">
+            <h3>Alertes récentes</h3>
+            @if (_alerts.Any(a => !a.IsRead))
+            {
+                <span class="badge badge-warn">@_alerts.Count(a => !a.IsRead) non lues</span>
+            }
+        </div>
+        @if (!_alerts.Any())
+        {
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><polyline points="20 6 9 17 4 12"/></svg>
+                <p>Aucune alerte — tout est normal</p>
+            </div>
+        }
+        else
+        {
+            <div class="alert-list">
+                @foreach (var a in _alerts.Take(5))
+                {
+                    <div class="alert-row @(a.IsRead ? "" : "unread") sev-@a.Severity">
+                        <span class="alert-type-dot sev-@a.Severity"></span>
+                        <div class="alert-content">
+                            <span class="alert-msg">@a.Message</span>
+                            <span class="alert-ts">@Relative(a.CreatedAt)</span>
+                        </div>
+                        <span class="sev-tag sev-@a.Severity">@a.Severity</span>
+                    </div>
+                }
+            </div>
+            <a href="/alertes" class="card-footer-link">Voir toutes les alertes →</a>
+        }
+    </div>
+
+    @if (_sensor != null)
+    {
+        <p class="update-ts">Dernière mise à jour capteurs : @Relative(_sensor.RecordedAt)</p>
+    }
+}
+
+@code {
+    private SensorDataDto?    _sensor;
+    private ChickDto?         _chick;
+    private List<AlertDto>    _alerts = new();
+    private bool              _loading = true;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true; StateHasChanged();
+        await Task.WhenAll(
+            Task.Run(async () => _sensor = await SensorSvc.GetLatestAsync()),
+            Task.Run(async () => _chick  = await ChickSvc.GetLatestAsync()),
+            Task.Run(async () => _alerts = await NotifSvc.GetAlertsAsync())
+        );
+        _loading = false;
+    }
+
+    private string TempClass() => _sensor == null ? "" : _sensor.Temperature > 35 ? "kpi-danger" : _sensor.Temperature < 15 ? "kpi-warn" : "kpi-ok";
+    private string TempSub()   => _sensor == null ? "Aucune donnée" : _sensor.Temperature > 35 ? "Température critique" : _sensor.Temperature < 15 ? "Température basse" : "Température normale";
+    private static double Pct(int v, int t) => t == 0 ? 0 : Math.Round(v * 100.0 / t, 1);
+
+    private static string Relative(DateTime dt)
+    {
+        var d = DateTime.Now - dt.ToLocalTime();
+        if (d.TotalMinutes < 1) return "À l'instant";
+        if (d.TotalHours   < 1) return $"il y a {(int)d.TotalMinutes} min";
+        if (d.TotalDays    < 1) return $"il y a {(int)d.TotalHours}h";
+        return dt.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+    }
+}

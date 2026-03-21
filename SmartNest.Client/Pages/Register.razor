@@ -1,0 +1,72 @@
+@page "/inscription"
+@using SmartNest.Client.Services
+@using SmartNest.Shared.DTOs
+@inject AuthenticationService Auth
+@inject NavigationManager Nav
+
+<div class="auth-shell">
+    <div class="auth-panel">
+        <div class="auth-brand">
+            <img src="images/logo.png" alt="Smart-Nest" />
+            <h1>Smart<em>Nest</em></h1>
+            <p>Créez votre espace de surveillance</p>
+        </div>
+
+        <div class="auth-form-wrap">
+            <h2>Créer un compte</h2>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="form-alert error">@_error</div>
+            }
+
+            <div class="field">
+                <label>Nom d'utilisateur</label>
+                <input type="text" @bind="_model.Username" placeholder="3 à 50 caractères" autocomplete="username" />
+            </div>
+            <div class="field">
+                <label>Adresse email</label>
+                <input type="email" @bind="_model.Email" placeholder="vous@exemple.com" autocomplete="email" />
+            </div>
+            <div class="field">
+                <label>Mot de passe</label>
+                <input type="password" @bind="_model.Password" placeholder="Minimum 6 caractères" autocomplete="new-password" />
+            </div>
+
+            <button class="btn-primary w-full @(_busy ? "busy" : "")" @onclick="Submit" disabled="@_busy">
+                @(_busy ? "Création en cours…" : "Créer mon compte")
+            </button>
+
+            <p class="auth-switch">Déjà inscrit ? <a href="/connexion">Se connecter</a></p>
+        </div>
+    </div>
+
+    <div class="auth-visual">
+        <div class="auth-visual-content">
+            <div class="feature-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>Température & humidité en temps réel</div>
+            <div class="feature-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>Surveillance vidéo WebRTC</div>
+            <div class="feature-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Alertes automatiques configurables</div>
+            <div class="feature-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12"/></svg>Comptage et suivi des volailles</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly RegisterRequest _model = new();
+    private string _error = string.Empty;
+    private bool   _busy  = false;
+
+    protected override async Task OnInitializedAsync()
+    { if (Auth.IsAuthenticated) Nav.NavigateTo("/"); }
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_model.Username) || string.IsNullOrWhiteSpace(_model.Email) || string.IsNullOrWhiteSpace(_model.Password))
+        { _error = "Veuillez remplir tous les champs."; return; }
+        _busy = true; _error = string.Empty;
+        var r = await Auth.RegisterAsync(_model);
+        _busy = false;
+        if (r.Success) Nav.NavigateTo("/");
+        else _error = r.Message;
+    }
+}

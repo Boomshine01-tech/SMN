@@ -1,0 +1,33 @@
+@using Microsoft.AspNetCore.Authorization
+@using SmartNest.Client.Services
+@inject AuthenticationService Auth
+@inject NavigationManager Nav
+
+@code {
+    [Parameter] public RouteData RouteData    { get; set; } = null!;
+    [Parameter] public Type      DefaultLayout{ get; set; } = null!;
+
+    private bool _ready = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _ready = false;
+        StateHasChanged();
+        var requiresAuth = RouteData.PageType.GetCustomAttributes(typeof(AuthorizeAttribute), true).Length > 0;
+        if (requiresAuth && !await Auth.IsAuthenticatedAsync())
+        {
+            Nav.NavigateTo("/connexion", forceLoad: false);
+            return;
+        }
+        _ready = true;
+    }
+}
+
+@if (_ready)
+{
+    <RouteView RouteData="@RouteData" DefaultLayout="@DefaultLayout" />
+}
+else
+{
+    <div class="splash"><div class="splash-ring"></div></div>
+}

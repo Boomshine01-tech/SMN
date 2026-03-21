@@ -1,0 +1,16 @@
+@using SmartNest.Client.Shared
+
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <AuthGuard RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div class="not-found">
+                <span>404</span>
+                <p>Page introuvable</p>
+                <a href="/">Retour au tableau de bord</a>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

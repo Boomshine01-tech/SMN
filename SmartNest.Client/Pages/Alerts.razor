@@ -1,0 +1,108 @@
+@page "/alertes"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using SmartNest.Client.Services
+@using SmartNest.Shared.DTOs
+@inject NotificationService NotifSvc
+
+<div class="page-header">
+    <div class="page-header-text"><h1>Alertes & Paramètres</h1><p>Seuils de détection et historique des alertes</p></div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h3>Seuils d'alerte</h3></div>
+    @if (_settings != null)
+    {
+        <div class="form-grid">
+            <div class="field"><label>Temp. max (°C)</label><input type="number" @bind="_settings.MaxTemperature" /></div>
+            <div class="field"><label>Temp. min (°C)</label><input type="number" @bind="_settings.MinTemperature" /></div>
+            <div class="field"><label>Humidité max (%)</label><input type="number" @bind="_settings.MaxHumidity" /></div>
+            <div class="field"><label>Particules max (µg/m³)</label><input type="number" @bind="_settings.MaxDust" /></div>
+        </div>
+        <div class="toggle-row">
+            <label class="toggle-label">
+                <span class="toggle-track">
+                    <input type="checkbox" @bind="_settings.EmailEnabled" />
+                    <span class="toggle-thumb"></span>
+                </span>
+                Notifications par email
+            </label>
+            <label class="toggle-label">
+                <span class="toggle-track">
+                    <input type="checkbox" @bind="_settings.PopupEnabled" />
+                    <span class="toggle-thumb"></span>
+                </span>
+                Notifications popup
+            </label>
+        </div>
+        @if (!string.IsNullOrEmpty(_saveMsg)) { <div class="form-alert @(_saveOk ? "success" : "error")">@_saveMsg</div> }
+        <button class="btn-primary" @onclick="Save" disabled="@_saving">@(_saving ? "Sauvegarde…" : "Sauvegarder")</button>
+    }
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Historique des alertes</h3>
+        @if (_alerts.Any(a => !a.IsRead))
+        {
+            <button class="btn-outline btn-sm" @onclick="MarkAll">Tout marquer comme lu</button>
+        }
+    </div>
+    @if (!_alerts.Any())
+    {
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><polyline points="20 6 9 17 4 12"/></svg>
+            <p>Aucune alerte enregistrée</p>
+        </div>
+    }
+    else
+    {
+        <div class="alert-list">
+            @foreach (var a in _alerts)
+            {
+                <div class="alert-row @(a.IsRead ? "" : "unread") sev-@a.Severity" @onclick="() => MarkOne(a)">
+                    <span class="alert-type-dot sev-@a.Severity"></span>
+                    <div class="alert-content">
+                        <span class="alert-msg">@a.Message</span>
+                        <span class="alert-ts">@Relative(a.CreatedAt)</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                        <span class="sev-tag sev-@a.Severity">@a.Severity</span>
+                        @if (!a.IsRead) { <span class="unread-dot"></span> }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private NotificationSettingDto? _settings;
+    private List<AlertDto>          _alerts = new();
+    private string _saveMsg = string.Empty;
+    private bool _saveOk, _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _settings = await NotifSvc.GetSettingsAsync() ?? new();
+        _alerts   = await NotifSvc.GetAlertsAsync();
+    }
+
+    private async Task Save()
+    {
+        _saving = true; _saveMsg = string.Empty;
+        (_saveOk, _saveMsg) = await NotifSvc.UpdateSettingsAsync(_settings!);
+        _saving = false;
+    }
+
+    private async Task MarkAll() { await NotifSvc.MarkAllReadAsync(); _alerts = await NotifSvc.GetAlertsAsync(); }
+    private async Task MarkOne(AlertDto a) { if (a.IsRead) return; await NotifSvc.MarkReadAsync(a.Id); a.IsRead = true; StateHasChanged(); }
+
+    private static string Relative(DateTime dt)
+    {
+        var d = DateTime.Now - dt.ToLocalTime();
+        if (d.TotalMinutes < 1) return "À l'instant";
+        if (d.TotalHours   < 1) return $"il y a {(int)d.TotalMinutes} min";
+        if (d.TotalDays    < 1) return $"il y a {(int)d.TotalHours}h";
+        return dt.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+    }
+}

@@ -1,0 +1,71 @@
+@* ── Volailles ─────────────────────────────────────────────────────────────── *@
+@page "/volailles"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using SmartNest.Client.Services
+@using SmartNest.Shared.DTOs
+@inject ChickService ChickSvc
+
+<div class="page-header">
+    <div class="page-header-text"><h1>Gestion des volailles</h1><p>Comptage et suivi sanitaire du troupeau</p></div>
+</div>
+
+@if (_latest != null)
+{
+    <div class="kpi-grid mb-4">
+        <div class="kpi-card kpi-accent"><div class="kpi-body"><span class="kpi-label">Total</span><span class="kpi-value">@_latest.Total</span></div></div>
+        <div class="kpi-card kpi-ok"><div class="kpi-body"><span class="kpi-label">Saines</span><span class="kpi-value">@_latest.Healthy</span></div></div>
+        <div class="kpi-card kpi-warn"><div class="kpi-body"><span class="kpi-label">Malades</span><span class="kpi-value">@_latest.Sick</span></div></div>
+        <div class="kpi-card kpi-danger"><div class="kpi-body"><span class="kpi-label">Critiques</span><span class="kpi-value">@_latest.Danger</span></div></div>
+    </div>
+
+    @if (_latest.Total > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h3>Répartition</h3><span class="badge">@_latest.RecordedAt.ToLocalTime().ToString("dd/MM HH:mm")</span></div>
+            <div class="health-bar large">
+                <div class="hb-seg hb-healthy" style="width:@Pct(_latest.Healthy,_latest.Total)%">@_latest.Healthy</div>
+                @if (_latest.Sick > 0)   { <div class="hb-seg hb-sick"   style="width:@Pct(_latest.Sick,_latest.Total)%">@_latest.Sick</div> }
+                @if (_latest.Danger > 0) { <div class="hb-seg hb-danger" style="width:@Pct(_latest.Danger,_latest.Total)%">@_latest.Danger</div> }
+            </div>
+        </div>
+    }
+}
+
+<div class="card">
+    <div class="card-header"><h3>Nouveau comptage</h3></div>
+    <div class="form-grid">
+        <div class="field"><label>Total</label><input type="number" min="0" @bind="_form.Total" /></div>
+        <div class="field"><label>Saines</label><input type="number" min="0" @bind="_form.Healthy" /></div>
+        <div class="field"><label>Malades</label><input type="number" min="0" @bind="_form.Sick" /></div>
+        <div class="field"><label>Critiques</label><input type="number" min="0" @bind="_form.Danger" /></div>
+    </div>
+    @if (_form.Healthy + _form.Sick + _form.Danger > _form.Total && _form.Total > 0)
+    {
+        <div class="form-alert error">La somme des catégories dépasse le total.</div>
+    }
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="form-alert @(_ok ? "success" : "error")">@_msg</div> }
+    <button class="btn-primary" @onclick="Save" disabled="@_saving">@(_saving ? "Enregistrement…" : "Enregistrer le comptage")</button>
+</div>
+
+@code {
+    private ChickDto? _latest;
+    private ChickDto  _form = new();
+    private string _msg = string.Empty;
+    private bool _ok, _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _latest = await ChickSvc.GetLatestAsync();
+        if (_latest != null) _form = new() { Total = _latest.Total, Healthy = _latest.Healthy, Sick = _latest.Sick, Danger = _latest.Danger };
+    }
+
+    private async Task Save()
+    {
+        _saving = true; _msg = string.Empty;
+        (_ok, _msg) = await ChickSvc.PostAsync(_form);
+        _saving = false;
+        if (_ok) _latest = await ChickSvc.GetLatestAsync();
+    }
+
+    private static double Pct(int v, int t) => t == 0 ? 0 : Math.Round(v * 100.0 / t, 1);
+}

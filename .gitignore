@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+.vs/
+*.db
+*.db-shm
+*.db-wal
+videos/
+publish/
+.env
+appsettings.*.json
+!appsettings.json

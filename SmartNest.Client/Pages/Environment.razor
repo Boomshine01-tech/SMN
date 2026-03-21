@@ -1,0 +1,106 @@
+@* ── Environment ──────────────────────────────────────────────────────────── *@
+@page "/environnement"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using SmartNest.Client.Services
+@using SmartNest.Shared.DTOs
+@inject SensorService SensorSvc
+
+<div class="page-header">
+    <div class="page-header-text"><h1>Environnement</h1><p>Capteurs température · humidité · particules</p></div>
+</div>
+
+<div class="time-tabs">
+    @foreach (var h in new[] { 6, 24, 72 })
+    {
+        <button class="@(_hours == h ? "active" : "")" @onclick="() => SetHours(h)">@(h < 24 ? $"{h}h" : $"{h/24}j")</button>
+    }
+</div>
+
+@if (_stats != null)
+{
+    <div class="kpi-grid">
+        <div class="kpi-card @(_stats.AvgTemperature > 35 ? "kpi-danger" : _stats.AvgTemperature < 15 ? "kpi-warn" : "kpi-ok")">
+            <div class="kpi-body">
+                <span class="kpi-label">Temp. moyenne</span>
+                <span class="kpi-value">@_stats.AvgTemperature.ToString("F1")°C</span>
+                <span class="kpi-sub">Min @_stats.MinTemperature.ToString("F1")° · Max @_stats.MaxTemperature.ToString("F1")°</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-body">
+                <span class="kpi-label">Hum. moyenne</span>
+                <span class="kpi-value">@_stats.AvgHumidity.ToString("F1")%</span>
+                <span class="kpi-sub">Min @_stats.MinHumidity.ToString("F1")% · Max @_stats.MaxHumidity.ToString("F1")%</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-body">
+                <span class="kpi-label">Particules moy.</span>
+                <span class="kpi-value">@_stats.AvgDust.ToString("F0") µg/m³</span>
+                <span class="kpi-sub">@_stats.DataPoints points collectés</span>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-header"><h3>Saisie manuelle</h3></div>
+    <div class="form-grid">
+        <div class="field"><label>Température (°C)</label><input type="number" step="0.1" @bind="_form.Temperature" /></div>
+        <div class="field"><label>Humidité (%)</label><input type="number" step="0.1" min="0" max="100" @bind="_form.Humidity" /></div>
+        <div class="field"><label>Particules (µg/m³)</label><input type="number" step="1" min="0" @bind="_form.Dust" /></div>
+    </div>
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="form-alert @(_ok ? "success" : "error")">@_msg</div> }
+    <button class="btn-primary" @onclick="Send" disabled="@_sending">@(_sending ? "Envoi…" : "Transmettre les données")</button>
+</div>
+
+@if (_history.Any())
+{
+    <div class="card">
+        <div class="card-header"><h3>Historique</h3><span class="badge">@_history.Count enregistrements</span></div>
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead><tr><th>Horodatage</th><th>Temp. (°C)</th><th>Humidité (%)</th><th>Particules (µg/m³)</th><th>État</th></tr></thead>
+                <tbody>
+                    @foreach (var r in _history)
+                    {
+                        var cls = r.Temperature > 35 ? "row-danger" : r.Temperature < 15 ? "row-warn" : "";
+                        <tr class="@cls">
+                            <td>@r.RecordedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@r.Temperature.ToString("F1")</td>
+                            <td>@r.Humidity.ToString("F1")</td>
+                            <td>@r.Dust.ToString("F0")</td>
+                            <td><span class="sev-tag @cls">@(cls == "row-danger" ? "Critique" : cls == "row-warn" ? "Basse" : "Normal")</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private int _hours = 24;
+    private SensorStatsDto?    _stats;
+    private List<SensorDataDto> _history = new();
+    private SensorDataDto _form = new() { Temperature = 22, Humidity = 60, Dust = 50 };
+    private string _msg = string.Empty;
+    private bool _ok, _sending;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task SetHours(int h) { _hours = h; await LoadData(); }
+    private async Task LoadData()
+    {
+        _stats   = await SensorSvc.GetStatsAsync(_hours);
+        _history = await SensorSvc.GetHistoryAsync(_hours);
+        StateHasChanged();
+    }
+    private async Task Send()
+    {
+        _sending = true; _msg = string.Empty;
+        (_ok, _msg) = await SensorSvc.PostAsync(_form);
+        _sending = false;
+        if (_ok) await LoadData();
+    }
+}

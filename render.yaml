@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: smart-nest
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+
+    # Variables d'environnement — à configurer dans le dashboard Render
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true          # Render génère une valeur aléatoire sécurisée
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smart-nest-db
+          property: connectionString
+
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+
+      # TURN server (optionnel — remplacez par vos credentials Metered.ca)
+      - key: WebRTC__TurnHost
+        value: openrelay.metered.ca
+      - key: WebRTC__TurnUsername
+        value: openrelayproject
+      - key: WebRTC__TurnCredential
+        value: openrelayproject
+
+      # SMTP (optionnel — remplissez si vous utilisez les emails)
+      # - key: Smtp__Host
+      #   value: smtp.gmail.com
+      # - key: Smtp__Port
+      #   value: "587"
+      # - key: Smtp__Username
+      #   sync: false
+      # - key: Smtp__Password
+      #   sync: false
+      # - key: Smtp__From
+      #   value: noreply@votre-domaine.com
+
+    healthCheckPath: /api/health
+
+databases:
+  - name: smart-nest-db
+    plan: free
+    databaseName: smartnest
+    user: smartnest
