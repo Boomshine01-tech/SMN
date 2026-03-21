@@ -82,16 +82,48 @@ var API_BASE = location.origin;
 <script src="js/webrtc.js"></script>
 <script>
 async function start() {
-    document.getElementById("btn-start").disabled = true;
+    // Lire les champs si remplis manuellement
+    var room  = document.getElementById("inp-room")  ? document.getElementById("inp-room").value.trim()  : ROOM_ID;
+    var token = document.getElementById("inp-token") ? document.getElementById("inp-token").value.trim() : TOKEN;
+
+    if (!room || !token) {
+        alert("Room ID et Token requis.");
+        return;
+    }
+
+    // Mettre à jour les variables globales
+    ROOM_ID = room;
+    TOKEN   = token;
+
+    // Afficher la carte stream, cacher la config
+    var cfgCard    = document.getElementById("cfg-card");
+    var streamCard = document.getElementById("stream-card");
+    if (cfgCard)    cfgCard.style.display    = "none";
+    if (streamCard) streamCard.style.display = "block";
+
+    // Maintenant les boutons existent dans le DOM
+    var btnStart = document.getElementById("btn-start");
+    var btnRec   = document.getElementById("btn-rec");
+    var btnStop  = document.getElementById("btn-stop");
+
+    if (btnStart) btnStart.disabled = true;
+
+    setStatus("conn");
+    addLog("Démarrage — room: " + ROOM_ID);
+
     var ok = await SmartNestWebRTC.initSender(ROOM_ID, TOKEN, null);
+
     if (ok) {
         setStatus("live");
-        document.getElementById("btn-rec").disabled  = false;
-        document.getElementById("btn-stop").disabled = false;
-        addLog("Sender prêt, room: " + ROOM_ID);
+        if (btnRec)  btnRec.disabled  = false;
+        if (btnStop) btnStop.disabled = false;
+        addLog("✅ Sender prêt");
     } else {
-        document.getElementById("btn-start").disabled = false;
         setStatus("off");
+        if (btnStart) btnStart.disabled = false;
+        if (cfgCard)    cfgCard.style.display    = "block";
+        if (streamCard) streamCard.style.display = "none";
+        addLog("❌ Échec démarrage");
     }
 }
 
