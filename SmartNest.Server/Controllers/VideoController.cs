@@ -6,7 +6,7 @@ using SmartNest.Shared.DTOs;
 
 namespace SmartNest.Server.Controllers;
 
-[ApiController, Route("api/video"), Authorize]
+[ApiController, Route("api/video")]
 public class VideoController : ControllerBase
 {
     private readonly IWebHostEnvironment   _env;
@@ -20,6 +20,7 @@ public class VideoController : ControllerBase
     private void EnsureDir() => Directory.CreateDirectory(VideoDir);
 
     [HttpPost("upload")]
+    
     [RequestSizeLimit(500_000_000)]
     public async Task<IActionResult> Upload(IFormFile file, [FromQuery] string? sessionId)
     {
