@@ -91,6 +91,7 @@ window.SmartNestWebRTC = (() => {
     }
 
     function createPc() {
+        var iceServers = window._smn_ice_servers || ICE_SERVERS;
         const p = new RTCPeerConnection({
             iceServers: ICE_SERVERS, iceTransportPolicy:"all",
             bundlePolicy:"max-bundle", rtcpMuxPolicy:"require"
