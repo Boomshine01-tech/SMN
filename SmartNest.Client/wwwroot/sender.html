@@ -74,118 +74,88 @@ video{width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;display:blo
 
 <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
 <script>
-const params = new URLSearchParams(location.search);
-if (params.get("room"))  document.getElementById("inp-room").value  = params.get("room");
-if (params.get("token")) document.getElementById("inp-token").value = params.get("token");
-if (params.get("room") && params.get("token")) { document.getElementById("cfg-card").style.display="none"; setTimeout(start,600); }
-
-let hub=null,pc=null,stream=null,recorder=null,isRec=false,sessionId=null,recTimer=null;
-let currentToken="",viewerConnId=null;
-
-let ICE=[
-    {urls:"stun:stun.l.google.com:19302"},
-    {urls:"stun:openrelay.metered.ca:80"},
-    {urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},
-    {urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},
-    {urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"},
-    {urls:"turns:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"}
-];
-
-function addLog(m){const el=document.getElementById("log"),t=new Date().toLocaleTimeString("fr-FR");el.innerHTML+=`<span style="color:var(--t3)">[${t}]</span> ${m}<br/>`;el.scrollTop=el.scrollHeight;}
-function setStatus(s){const el=document.getElementById("status"),m={off:["off","Hors ligne"],conn:["conn","Connexion…"],live:["live","En direct"],rec:["rec","⏺ Enregistrement"]};const[c,t]=m[s]||m.off;el.className=`pill ${c}`;el.innerHTML=`<span class="dot"></span> ${t}`;}
-
-async function loadIce(t){try{const r=await fetch("/api/webrtc/ice-servers",{headers:{"Authorization":"Bearer "+t}});if(r.ok){const d=await r.json();if(d?.length)ICE=d;addLog("ICE servers chargés ("+d.length+")");}catch(e){addLog("ICE fallback");}}catch(e){}}
-
-async function start(){
-    const room=document.getElementById("inp-room").value.trim();
-    const tok=document.getElementById("inp-token").value.trim();
-    if(!room||!tok){alert("Room ID et Token requis.");return;}
-    currentToken=tok;
-    document.getElementById("cfg-card").style.display="none";
-    document.getElementById("stream-card").style.display="block";
-    document.getElementById("lbl-room").textContent=room;
-    setStatus("conn"); addLog("Accès caméra…");
-
-    try{stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},frameRate:{ideal:25}},audio:true});}
-    catch(e){addLog("❌ Caméra refusée: "+e.message);setStatus("off");return;}
-
-    document.getElementById("preview").srcObject=stream; addLog("Webcam OK");
-    await loadIce(tok);
-
-    hub=new signalR.HubConnectionBuilder()
-        .withUrl("/hubs/webrtc",{accessTokenFactory:()=>tok})
-        .withAutomaticReconnect([0,2000,5000,15000]).build();
-
-    hub.on("OfferRequested",id=>{viewerConnId=id;sendOffer(id);});
-    hub.on("ReceiveAnswer",async sdp=>{if(pc?.signalingState!=="stable")await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(sdp)));});
-    hub.on("ReceiveIceCandidate",async c=>{try{if(pc)await pc.addIceCandidate(new RTCIceCandidate(JSON.parse(c)));}catch(e){}});
-    hub.on("PeerJoined",id=>{addLog("Viewer connecté");viewerConnId=id;sendOffer(id);});
-    hub.on("PeerLeft",()=>{addLog("Viewer déconnecté");pc?.close();pc=null;});
-    hub.onreconnected(async()=>await hub.invoke("JoinRoom",room));
-
-    await hub.start(); await hub.invoke("JoinRoom",room);
-    addLog("Hub connecté, room: "+room); setStatus("live");
-    document.getElementById("btn-rec").disabled=false;
-}
-
-async function sendOffer(vid){
-    if(pc){pc.close();}
-    pc=new RTCPeerConnection({iceServers:ICE,bundlePolicy:"max-bundle",rtcpMuxPolicy:"require"});
-    stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-    pc.onicecandidate=async e=>{if(e.candidate&&hub)await hub.invoke("SendIceCandidate","",JSON.stringify(e.candidate),vid);};
-    pc.oniceconnectionstatechange=()=>{
-        if(pc.iceConnectionState==="connected"||pc.iceConnectionState==="completed"){
-            pc.getStats().then(s=>s.forEach(r=>{
-                if(r.type==="candidate-pair"&&r.state==="succeeded"){
-                    const t=r.localCandidateType+"→"+r.remoteCandidateType;
-                    document.getElementById("lbl-conn").textContent="Mode: "+(t.includes("relay")?"TURN relay":"Direct P2P");
-                    addLog("Connexion établie: "+t);
-                }
-            }));
-        }
-    };
-    const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
-    await hub.invoke("SendOffer","",JSON.stringify(offer),vid);
-    addLog("Offer envoyée");
-}
-
-async function toggleRec(){
-    const btn=document.getElementById("btn-rec");
-    if(!isRec){
-        sessionId=Date.now().toString();
-        const mime=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"].find(t=>MediaRecorder.isTypeSupported(t))||"video/webm";
-        recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2500000});
-        let chunks=[];
-        recorder.ondataavailable=e=>{if(e.data?.size>0)chunks.push(e.data);};
-        recTimer=setInterval(async()=>{
-            if(!chunks.length)return;
-            const blob=new Blob(chunks,{type:"video/webm"});chunks=[];
-            const fd=new FormData();fd.append("file",blob,"recording.webm");
-            try{const r=await fetch(`/api/video/upload?sessionId=${sessionId}`,{method:"POST",headers:{"Authorization":"Bearer "+currentToken},body:fd});if(r.ok){const d=await r.json();addLog("Segment: "+d.fileName);}}catch(e){addLog("Upload err: "+e.message);}
-        },60000);
-        recorder.start(1000); isRec=true;
-        btn.textContent="⏹ Arrêter enreg."; btn.className="btn btn-red";
-        setStatus("rec"); addLog("Enregistrement démarré");
-    }else{
-        clearInterval(recTimer); btn.disabled=true; btn.textContent="Finalisation…";
-        await new Promise(r=>{recorder.onstop=r;recorder.stop();});
-        isRec=false; recorder=null;
-        btn.textContent="⏺ Enregistrer"; btn.className="btn btn-gold"; btn.disabled=false;
-        setStatus("live"); addLog("Enregistrement arrêté");
+var TOKEN    = new URLSearchParams(location.search).get("token") || "";
+var ROOM_ID  = new URLSearchParams(location.search).get("room")  || "";
+var HUB_URL  = location.origin + "/hubs/webrtc";
+var API_BASE = location.origin;
+</script>
+<script src="js/webrtc.js"></script>
+<script>
+async function start() {
+    document.getElementById("btn-start").disabled = true;
+    var ok = await SmartNestWebRTC.initSender(ROOM_ID, TOKEN, null);
+    if (ok) {
+        setStatus("live");
+        document.getElementById("btn-rec").disabled  = false;
+        document.getElementById("btn-stop").disabled = false;
+        addLog("Sender prêt, room: " + ROOM_ID);
+    } else {
+        document.getElementById("btn-start").disabled = false;
+        setStatus("off");
     }
 }
 
-async function stop(){
-    if(isRec)await toggleRec();
-    if(pc){pc.close();pc=null;}
-    if(hub){await hub.stop();hub=null;}
-    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
-    document.getElementById("preview").srcObject=null;
-    setStatus("off"); addLog("Diffusion arrêtée");
-    document.getElementById("cfg-card").style.display="block";
-    document.getElementById("stream-card").style.display="none";
-    document.getElementById("btn-rec").disabled=true;
+async function toggleRec() {
+    var btn = document.getElementById("btn-rec");
+    if (btn.textContent.includes("⏺")) {
+        await SmartNestWebRTC.startRecording(TOKEN);
+        btn.textContent = "⏹ Arrêter enreg.";
+        btn.className = "btn btn-red";
+        setStatus("rec");
+        addLog("Enregistrement démarré");
+    } else {
+        btn.disabled = true;
+        btn.textContent = "Finalisation…";
+        await SmartNestWebRTC.stopRecording(TOKEN);
+        btn.textContent = "⏺ Enregistrer";
+        btn.className = "btn btn-gold";
+        btn.disabled = false;
+        setStatus("live");
+        addLog("Enregistrement arrêté");
+    }
 }
+
+async function stop() {
+    await SmartNestWebRTC.stopAll();
+    document.getElementById("preview").srcObject = null;
+    setStatus("off");
+    document.getElementById("btn-start").disabled = false;
+    document.getElementById("btn-rec").disabled   = true;
+    document.getElementById("btn-stop").disabled  = true;
+    addLog("Diffusion arrêtée");
+}
+
+function addLog(m) {
+    var el = document.getElementById("log");
+    var t  = new Date().toLocaleTimeString("fr-FR");
+    el.innerHTML += "<span style='color:var(--t3)'>[" + t + "]</span> " + m + "<br/>";
+    el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(s) {
+    var el  = document.getElementById("status");
+    var map = {
+        off:  ["off",  "Hors ligne"],
+        conn: ["conn", "Connexion…"],
+        live: ["live", "En direct"],
+        rec:  ["rec",  "⏺ Enregistrement"]
+    };
+    var cls = map[s][0];
+    var txt = map[s][1];
+    el.className = "pill " + cls;
+    el.innerHTML = "<span class='dot'></span>&nbsp;" + txt;
+}
+
+// Pré-remplir les champs si token et room dans l'URL
+(function() {
+    if (ROOM_ID)  document.getElementById("inp-room").value  = ROOM_ID;
+    if (TOKEN)    document.getElementById("inp-token").value = TOKEN;
+    if (ROOM_ID && TOKEN) {
+        document.getElementById("cfg-card").style.display    = "none";
+        document.getElementById("stream-card").style.display = "block";
+        setTimeout(start, 800);
+    }
+})();
 </script>
 </body>
 </html>
