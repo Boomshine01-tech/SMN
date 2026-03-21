@@ -12,24 +12,40 @@ var builder = WebApplication.CreateBuilder(args);
 // Render fournit DATABASE_URL, JWT_SECRET, TURN_* via le dashboard
 
 // ─── Base de données PostgreSQL ───────────────────────────────────────────────
+
+string? connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
 var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
-string connStr;
 
 if (!string.IsNullOrEmpty(databaseUrl))
 {
-    // Format Render : postgresql://user:pass@host:port/db
-    var uri  = new Uri(databaseUrl);
-    var info = uri.UserInfo.Split(':');
-    connStr  = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={info[0]};Password={info[1]};SSL Mode=Require;Trust Server Certificate=true";
+    Console.WriteLine(" DATABASE_URL détectée (Render)");
+    var uri = new Uri(databaseUrl);
+    var userInfo = uri.UserInfo.Split(':');
+    var port = uri.Port > 0 ? uri.Port : 5432;
+
+    Console.WriteLine($" PostgreSQL Host     : {uri.Host}");
+    Console.WriteLine($" PostgreSQL Port     : {port}");
+    Console.WriteLine($" PostgreSQL Database : {uri.AbsolutePath.Trim('/')}");
+    Console.WriteLine($" PostgreSQL User     : {userInfo[0]}");
+
+    connectionString =
+        $"Host={uri.Host};" +
+        $"Port={port};" +
+        $"Database={uri.AbsolutePath.Trim('/')};" +
+        $"Username={userInfo[0]};" +
+        $"Password={userInfo[1]};" +
+        $"SSL Mode=Require;" +
+        $"Trust Server Certificate=true";
 }
 else
 {
-    connStr = builder.Configuration.GetConnectionString("DefaultConnection")
+    connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
               ?? "Host=localhost;Database=smartnest;Username=postgres;Password=postgres";
 }
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseNpgsql(connStr));
+    opt.UseNpgsql(connectionString));
 
 // ─── Services applicatifs ─────────────────────────────────────────────────────
 builder.Services.AddScoped<IAuthService, AuthService>();
