@@ -113,8 +113,8 @@ if (builder.Environment.IsDevelopment())
 }
 
 // ─── PORT Render ─────────────────────────────────────────────────────────────
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+var portEnv = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{portEnv}");
 
 var app = builder.Build();
 
