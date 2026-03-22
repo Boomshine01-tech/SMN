@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Smart-Nest — Émetteur</title>
+<style>
+:root{--navy:#0d1b2a;--navy2:#162436;--nb:#253d54;--gold:#c8a84b;--amber:#f5c218;--ok:#34a471;--danger:#e04545;--t1:#eee8dc;--t2:#8fa5bb;--t3:#4e6a82}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--navy);color:var(--t1);font-family:system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px}
+.brand{font-size:1.4rem;font-weight:700;margin-bottom:4px}.brand em{color:var(--gold);font-style:normal}
+.sub{font-size:.78rem;color:var(--t3);margin-bottom:22px}
+.card{background:var(--navy2);border:1px solid var(--nb);border-radius:12px;padding:18px;width:100%;max-width:680px;margin-bottom:14px}
+.title{font-size:.75rem;color:var(--gold);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px}
+#local-preview{width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;display:block}
+.row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:.68rem;font-weight:700}
+.pill.live{background:rgba(52,164,113,.2);color:#7fddaa;border:1px solid rgba(52,164,113,.3)}
+.pill.conn{background:rgba(232,160,32,.15);color:#ffc060}
+.pill.rec{background:rgba(224,69,69,.2);color:#ff8888;border:1px solid rgba(224,69,69,.3)}
+.pill.off{background:rgba(78,106,130,.1);color:var(--t3)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.blink{animation:blink 1s infinite}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn{padding:9px 18px;border-radius:8px;font-family:inherit;font-weight:600;font-size:.83rem;cursor:pointer;border:none;transition:all .2s}
+.btn-gold{background:linear-gradient(135deg,var(--gold),var(--amber));color:var(--navy)}
+.btn-gold:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 14px rgba(200,168,75,.35)}
+.btn-red{background:rgba(224,69,69,.12);border:1px solid rgba(224,69,69,.3);color:#ff9999}
+.btn-red:hover:not(:disabled){background:rgba(224,69,69,.22)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.log{background:rgba(0,0,0,.25);border-radius:7px;padding:10px;font-size:.71rem;color:var(--t2);max-height:180px;overflow-y:auto;font-family:monospace;line-height:1.6}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.field label{font-size:.75rem;color:var(--t2);font-weight:500}
+.field input{background:var(--navy);border:1px solid var(--nb);border-radius:7px;color:var(--t1);padding:8px 11px;font-size:.84rem;font-family:inherit;width:100%}
+.field input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(200,168,75,.12)}
+.alert-error{padding:8px 12px;border-radius:7px;font-size:.82rem;margin-bottom:12px;background:rgba(224,69,69,.12);border:1px solid rgba(224,69,69,.3);color:#ff9999}
+.info-row{font-size:.72rem;color:var(--t3);margin-top:8px}
+.info-row strong{color:var(--t2)}
+</style>
+</head>
+<body>
+
+<div class="brand">Smart<em>Nest</em></div>
+<div class="sub">Module émetteur vidéo</div>
+
+<!-- Config -->
+<div class="card" id="cfg-card">
+    <div class="title">Connexion</div>
+    <div id="auth-error" class="alert-error" style="display:none"></div>
+    <div class="field">
+        <label>Identifiant</label>
+        <input type="text" id="inp-user" placeholder="votre_username" autocomplete="username"/>
+    </div>
+    <div class="field">
+        <label>Mot de passe</label>
+        <input type="password" id="inp-pass" placeholder="••••••••" autocomplete="current-password"/>
+    </div>
+    <div class="btns">
+        <button class="btn btn-gold" id="btn-login" onclick="login()">▶ Connexion et démarrage</button>
+    </div>
+</div>
+
+<!-- Stream -->
+<div class="card" id="stream-card" style="display:none">
+    <div class="row">
+        <div class="title" style="margin:0">Flux local</div>
+        <div id="status" class="pill off"><span class="dot"></span>&nbsp;Hors ligne</div>
+    </div>
+    <video id="local-preview" autoplay muted playsinline></video>
+    <div class="info-row" id="conn-info"></div>
+    <div class="btns">
+        <button class="btn btn-gold" id="btn-rec"  onclick="toggleRec()" disabled>⏺ Enregistrer</button>
+        <button class="btn btn-red"  id="btn-stop" onclick="stop()"      disabled>⏹ Arrêter</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="title">Journal</div>
+    <div class="log" id="log">Entrez vos identifiants et cliquez sur Connexion.<br/></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+<script src="js/webrtc.js"></script>
+<script>
+// ─── Variables globales ───────────────────────────────────────────────────────
+var TOKEN   = "";
+var ROOM_ID = "";
+
+// Pré-remplir depuis les params URL (username seulement, jamais le mdp)
+var params = new URLSearchParams(location.search);
+if (params.get("user")) document.getElementById("inp-user").value = params.get("user");
+
+// ─── Logs ────────────────────────────────────────────────────────────────────
+function addLog(m) {
+    var el = document.getElementById("log");
+    var t  = new Date().toLocaleTimeString("fr-FR");
+    el.innerHTML += "<span style='color:var(--t3)'>[" + t + "]</span> " + m + "<br/>";
+    el.scrollTop = el.scrollHeight;
+}
+
+// ─── Statut ──────────────────────────────────────────────────────────────────
+function setStatus(s) {
+    var el  = document.getElementById("status");
+    var map = {
+        off:  ["off",  "Hors ligne"],
+        conn: ["conn", "Connexion…"],
+        auth: ["conn", "Authentification…"],
+        live: ["live", "En direct"],
+        rec:  ["rec",  "⏺ Enregistrement"]
+    };
+    var arr = map[s] || map.off;
+    el.className = "pill " + arr[0];
+    var blink = (s === "live" || s === "rec") ? " blink" : "";
+    el.innerHTML = "<span class='dot" + blink + "'></span>&nbsp;" + arr[1];
+}
+
+// ─── fakeRef : relaie les événements WebRTC ──────────────────────────────────
+var fakeRef = {
+    invokeMethodAsync: function(method, event, dataJson) {
+        var d = {};
+        try { d = JSON.parse(dataJson); } catch(e) {}
+        switch(event) {
+            case "hub-connected":
+                addLog("✅ Hub SignalR connecté — room: " + ROOM_ID);
+                break;
+            case "sender-ready":
+                addLog("✅ Webcam prête — en attente d'un viewer");
+                setStatus("live");
+                document.getElementById("btn-rec").disabled  = false;
+                document.getElementById("btn-stop").disabled = false;
+                break;
+            case "peer-joined":
+                addLog("👁 Viewer connecté — envoi du flux…");
+                break;
+            case "peer-left":
+                addLog("👁 Viewer déconnecté");
+                break;
+            case "connection-state":
+                addLog("WebRTC état: " + (d.state || ""));
+                if (d.state === "failed") {
+                    addLog("⚠ Connexion échouée — vérifiez les serveurs TURN dans Render");
+                }
+                break;
+            case "connection-type":
+                var mode = (d.type && d.type.includes("relay")) ? "TURN relay" : "Direct P2P";
+                addLog("🔗 Mode: " + mode);
+                document.getElementById("conn-info").innerHTML =
+                    "Connecté en <strong>" + mode + "</strong>";
+                break;
+            case "recording-started":
+                addLog("⏺ Enregistrement démarré (segments 60s)");
+                setStatus("rec");
+                break;
+            case "recording-stopped":
+                addLog("⏹ Enregistrement terminé et sauvegardé");
+                setStatus("live");
+                break;
+            case "chunk-uploaded":
+                addLog("📤 Segment: " + (d.fileName || ""));
+                break;
+            case "error":
+                addLog("❌ " + (d.message || "Erreur inconnue"));
+                break;
+        }
+    }
+};
+
+// ─── Étape 1 : Authentification ───────────────────────────────────────────────
+async function login() {
+    var user = document.getElementById("inp-user").value.trim();
+    var pass = document.getElementById("inp-pass").value.trim();
+
+    if (!user || !pass) {
+        showError("Identifiant et mot de passe requis.");
+        return;
+    }
+
+    document.getElementById("btn-login").disabled = true;
+    document.getElementById("auth-error").style.display = "none";
+    setStatus("auth");
+    addLog("Authentification en cours…");
+
+    try {
+        var resp = await fetch(location.origin + "/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: user, password: pass, rememberMe: true })
+        });
+
+        var data = await resp.json();
+
+        if (!resp.ok || !data.success) {
+            showError(data.message || "Identifiants incorrects.");
+            document.getElementById("btn-login").disabled = false;
+            setStatus("off");
+            return;
+        }
+
+        TOKEN   = data.token;
+        ROOM_ID = data.username;
+        addLog("✅ Authentifié : " + ROOM_ID);
+
+        // Passer à l'écran de streaming
+        await startStream();
+
+    } catch(e) {
+        showError("Erreur réseau : " + e.message);
+        document.getElementById("btn-login").disabled = false;
+        setStatus("off");
+    }
+}
+
+function showError(msg) {
+    var el = document.getElementById("auth-error");
+    el.textContent = msg;
+    el.style.display = "block";
+}
+
+// ─── Étape 2 : Démarrer le stream ────────────────────────────────────────────
+async function startStream() {
+    // Afficher stream-card AVANT d'accéder aux boutons
+    document.getElementById("cfg-card").style.display    = "none";
+    document.getElementById("stream-card").style.display = "block";
+
+    setStatus("conn");
+    addLog("Chargement des serveurs ICE…");
+
+    // Charger les ICE servers depuis le serveur (credentials TURN sécurisés)
+    try {
+        var r = await fetch(location.origin + "/api/webrtc/ice-servers", {
+            headers: { "Authorization": "Bearer " + TOKEN }
+        });
+        if (r.ok) {
+            var servers = await r.json();
+            window._smn_ice_servers = servers;
+            addLog("ICE servers chargés (" + servers.length + ")");
+        }
+    } catch(e) {
+        addLog("ICE fallback (openrelay)");
+    }
+
+    addLog("Accès à la webcam…");
+    var ok = await SmartNestWebRTC.initSender(ROOM_ID, TOKEN, fakeRef);
+
+    if (!ok) {
+        addLog("❌ Accès webcam refusé ou erreur.");
+        setStatus("off");
+        document.getElementById("cfg-card").style.display    = "block";
+        document.getElementById("stream-card").style.display = "none";
+        document.getElementById("btn-login").disabled = false;
+    }
+}
+
+// ─── Enregistrement ──────────────────────────────────────────────────────────
+async function toggleRec() {
+    var btn = document.getElementById("btn-rec");
+    if (btn.dataset.rec !== "1") {
+        var ok = await SmartNestWebRTC.startRecording(TOKEN);
+        if (ok) {
+            btn.dataset.rec = "1";
+            btn.textContent = "⏹ Arrêter enreg.";
+            btn.className   = "btn btn-red";
+        }
+    } else {
+        btn.disabled    = true;
+        btn.textContent = "Finalisation…";
+        await SmartNestWebRTC.stopRecording(TOKEN);
+        btn.dataset.rec = "0";
+        btn.textContent = "⏺ Enregistrer";
+        btn.className   = "btn btn-gold";
+        btn.disabled    = false;
+    }
+}
+
+// ─── Arrêt complet ────────────────────────────────────────────────────────────
+async function stop() {
+    await SmartNestWebRTC.stopAll();
+    document.getElementById("local-preview").srcObject = null;
+    setStatus("off");
+    document.getElementById("btn-rec").disabled  = true;
+    document.getElementById("btn-stop").disabled = true;
+    document.getElementById("stream-card").style.display = "none";
+    document.getElementById("cfg-card").style.display    = "block";
+    document.getElementById("btn-login").disabled = false;
+    TOKEN = ""; ROOM_ID = "";
+    addLog("⏹ Diffusion arrêtée");
+}
+
+// ─── Auto-login depuis params URL ─────────────────────────────────────────────
+// URL : /sender.html?user=username&autostart=1
+// Le mot de passe n'est JAMAIS dans l'URL — l'autostart nécessite un token
+// Pour l'autostart via Node-RED, utiliser ?token=xxx&room=xxx
+(function() {
+    var urlToken = params.get("token");
+    var urlRoom  = params.get("room");
+    if (urlToken && urlRoom) {
+        TOKEN   = urlToken;
+        ROOM_ID = urlRoom;
+        addLog("Token reçu depuis l'URL — démarrage automatique");
+        document.getElementById("cfg-card").style.display = "none";
+        setTimeout(startStream, 500);
+    }
+})();
+</script>
+</body>
+</html>
