@@ -18,10 +18,10 @@ builder.Services.AddScoped<VideoService>();
 
 var host = builder.Build();
 
-var auth = host.Services.GetRequiredService<AuthenticationService>();
-await auth.InitializeAsync(
-    host.Services.GetRequiredService<ILocalStorageService>(),
-    host.Services.GetRequiredService<HttpClient>()
-);
+var auth    = host.Services.GetRequiredService<AuthenticationService>();
+var storage = host.Services.GetRequiredService<ILocalStorageService>();
+var http    = host.Services.GetRequiredService<HttpClient>();
+
+await auth.InitializeAsync(storage, http);
 
 await host.RunAsync();
