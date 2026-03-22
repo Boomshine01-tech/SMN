@@ -74,6 +74,7 @@ public class AuthenticationService
         Token = r.Token; Username = r.Username; Email = r.Email; Role = r.Role;
         IsAuthenticated = true;
         await _storage!.SetItemAsStringAsync("authToken",         r.Token);
+        await _storage.SetItemAsStringAsync ("authUsername", r.Username);
         await _storage.SetItemAsStringAsync ("tokenExpiration",   r.ExpiresAt.ToString("O"));
         SetHeader();
         OnAuthStateChanged?.Invoke();
