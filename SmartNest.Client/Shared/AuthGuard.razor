@@ -2,6 +2,7 @@
 @using SmartNest.Client.Services
 @inject AuthenticationService Auth
 @inject NavigationManager Nav
+@implements IDisposable
 
 @code {
     [Parameter] public RouteData RouteData    { get; set; } = null!;
@@ -13,14 +14,31 @@
     {
         _ready = false;
         StateHasChanged();
-        var requiresAuth = RouteData.PageType.GetCustomAttributes(typeof(AuthorizeAttribute), true).Length > 0;
+
+        // Attendre que le service soit initialisé
+        if (!Auth.IsInitialized)
+        {
+            var tcs = new TaskCompletionSource();
+            void Handler() => tcs.TrySetResult();
+            Auth.OnInitialized += Handler;
+            // Timeout de sécurité 3s
+            await Task.WhenAny(tcs.Task, Task.Delay(3000));
+            Auth.OnInitialized -= Handler;
+        }
+
+        var requiresAuth = RouteData.PageType
+            .GetCustomAttributes(typeof(AuthorizeAttribute), true).Length > 0;
+
         if (requiresAuth && !await Auth.IsAuthenticatedAsync())
         {
             Nav.NavigateTo("/connexion", forceLoad: false);
             return;
         }
+
         _ready = true;
     }
+
+    public void Dispose() { }
 }
 
 @if (_ready)
