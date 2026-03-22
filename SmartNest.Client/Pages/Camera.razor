@@ -169,18 +169,38 @@
     {
         _ref = DotNetObjectReference.Create(this);
         _connecting = true;
-        await Task.Delay(300);
-        if (string.IsNullOrEmpty(Auth.Username))
+
+        // Lire directement depuis localStorage si Auth n'est pas encore chargé
+        var token    = Auth.Token;
+        var username = Auth.Username;
+
+        if (string.IsNullOrEmpty(token))
         {
-            AddEvent("❌ Utilisateur non authentifié");
+            token    = await JS.InvokeAsync<string>("localStorage.getItem", "authToken");
+            username = await JS.InvokeAsync<string>("localStorage.getItem", "authUsername");
+        }
+
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(username))
+        {
+            AddEvent("❌ Session expirée — reconnectez-vous");
             _connecting = false;
+            StateHasChanged();
             return;
         }
 
-        AddEvent("Room: " + Auth.Username);  // ← vérifier la valeur
+        AddEvent("Room : " + username);
         StateHasChanged();
-        try { await JS.InvokeVoidAsync("SmartNestWebRTC.initViewer", Auth.Username, Auth.Token, _ref); }
-        catch (Exception ex) { AddEvent($"Erreur: {ex.Message}"); _connecting = false; }
+
+        try
+        {
+            await JS.InvokeVoidAsync("SmartNestWebRTC.initViewer", username, token, _ref);
+        }
+        catch (Exception ex)
+        {
+            AddEvent("Erreur: " + ex.Message);
+            _connecting = false;
+            StateHasChanged();
+        }
     }
 
     [JSInvokable]
