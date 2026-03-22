@@ -18,6 +18,8 @@ public class AuthenticationService
     public string Email           { get; private set; } = string.Empty;
     public string Role            { get; private set; } = string.Empty;
     public string Token           { get; private set; } = string.Empty;
+    public bool IsInitialized { get; private set; } = false;
+    public event Action? OnInitialized;
 
     public async Task InitializeAsync(ILocalStorageService storage, HttpClient http)
     {
@@ -30,7 +32,12 @@ public class AuthenticationService
             ParseClaims(token);
             SetHeader();
             IsAuthenticated = true;
+            var storedUsername = await _storage.GetItemAsStringAsync("authUsername");
+            if (!string.IsNullOrEmpty(storedUsername))
+                Username = storedUsername;
         }
+         IsInitialized = true;         
+         OnInitialized?.Invoke();
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest req)
