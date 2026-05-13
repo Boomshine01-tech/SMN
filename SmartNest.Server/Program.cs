@@ -15,28 +15,24 @@ var builder = WebApplication.CreateBuilder(args);
 
 string? connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+var host     = Environment.GetEnvironmentVariable("DB_HOST");
+var port     = Environment.GetEnvironmentVariable("DB_PORT")     ?? "5432";
+var database = Environment.GetEnvironmentVariable("DB_NAME")     ?? "postgres";
+var username = Environment.GetEnvironmentVariable("DB_USER")     ?? "postgres";
+var password = Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "";
 
-if (!string.IsNullOrEmpty(databaseUrl))
+if (!string.IsNullOrEmpty(host))
 {
-    // Npgsql supporte nativement le format postgresql:// — on évite System.Uri
-    // qui plante sur les mots de passe Supabase contenant des caractères spéciaux
-    // (crochets, arobase, etc.) ou sur le username "postgres.xxxxx" du pooler.
-    bool isSupabase = databaseUrl.Contains("supabase");
-    Console.WriteLine($" DATABASE_URL détectée ({(isSupabase ? "Supabase" : "Render/autre")})");
-
-    // Npgsql accepte les paramètres SSL directement en query string sur l'URL
-    string sslParams = "sslmode=require&Trust Server Certificate=true";
-    if (isSupabase) sslParams += "&Pooling=false";
-
-    // Ajoute les params SSL seulement s'ils ne sont pas déjà dans l'URL
-    if (!databaseUrl.Contains("sslmode"))
-    {
-        string sep = databaseUrl.Contains('?') ? "&" : "?";
-        databaseUrl += $"{sep}{sslParams}";
-    }
-
-    connectionString = databaseUrl;
+    Console.WriteLine($" DB_HOST détecté → {host}:{port}/{database}");
+    connectionString =
+        $"Host={host};" +
+        $"Port={port};" +
+        $"Database={database};" +
+        $"Username={username};" +
+        $"Password={password};" +
+        $"SSL Mode=Require;" +
+        $"Trust Server Certificate=true;" +
+        $"Pooling=false;";
 }
 else
 {
