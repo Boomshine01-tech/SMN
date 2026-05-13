@@ -19,24 +19,35 @@ var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
 if (!string.IsNullOrEmpty(databaseUrl))
 {
-    Console.WriteLine(" DATABASE_URL détectée (Render)");
-    var uri = new Uri(databaseUrl);
-    var userInfo = uri.UserInfo.Split(':');
-    var port = uri.Port > 0 ? uri.Port : 5432;
+    var uri      = new Uri(databaseUrl);
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var host     = uri.Host;
+    var port     = uri.Port > 0 ? uri.Port : 5432;
+    var database = uri.AbsolutePath.Trim('/');
+    var username = Uri.UnescapeDataString(userInfo[0]);
+    var password = Uri.UnescapeDataString(userInfo[1]);
 
-    Console.WriteLine($" PostgreSQL Host     : {uri.Host}");
+    // Supabase utilise le port 5432 (direct) ou 6543 (pgBouncer/pooler).
+    // EF Core Migrations nécessite une connexion directe → port 5432.
+    // Pour Supabase, on désactive le pooling interne de Npgsql afin
+    // d'éviter les conflits avec pgBouncer si l'URL pointe vers le port 6543.
+    bool isSupabase = host.Contains("supabase.co");
+
+    Console.WriteLine($" DATABASE_URL détectée ({(isSupabase ? "Supabase" : "Render/autre")})");
+    Console.WriteLine($" PostgreSQL Host     : {host}");
     Console.WriteLine($" PostgreSQL Port     : {port}");
-    Console.WriteLine($" PostgreSQL Database : {uri.AbsolutePath.Trim('/')}");
-    Console.WriteLine($" PostgreSQL User     : {userInfo[0]}");
+    Console.WriteLine($" PostgreSQL Database : {database}");
+    Console.WriteLine($" PostgreSQL User     : {username}");
 
     connectionString =
-        $"Host={uri.Host};" +
+        $"Host={host};" +
         $"Port={port};" +
-        $"Database={uri.AbsolutePath.Trim('/')};" +
-        $"Username={userInfo[0]};" +
-        $"Password={userInfo[1]};" +
+        $"Database={database};" +
+        $"Username={username};" +
+        $"Password={password};" +
         $"SSL Mode=Require;" +
-        $"Trust Server Certificate=true";
+        $"Trust Server Certificate=true;" +
+        (isSupabase ? "Pooling=false;" : "");
 }
 else
 {
