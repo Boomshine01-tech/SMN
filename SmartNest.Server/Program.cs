@@ -19,35 +19,24 @@ var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
 if (!string.IsNullOrEmpty(databaseUrl))
 {
-    var uri      = new Uri(databaseUrl);
-    var userInfo = uri.UserInfo.Split(':', 2);
-    var host     = uri.Host;
-    var port     = uri.Port > 0 ? uri.Port : 5432;
-    var database = uri.AbsolutePath.Trim('/');
-    var username = Uri.UnescapeDataString(userInfo[0]);
-    var password = Uri.UnescapeDataString(userInfo[1]);
-
-    // Supabase utilise le port 5432 (direct) ou 6543 (pgBouncer/pooler).
-    // EF Core Migrations nécessite une connexion directe → port 5432.
-    // Pour Supabase, on désactive le pooling interne de Npgsql afin
-    // d'éviter les conflits avec pgBouncer si l'URL pointe vers le port 6543.
-    bool isSupabase = host.Contains("supabase.co");
-
+    // Npgsql supporte nativement le format postgresql:// — on évite System.Uri
+    // qui plante sur les mots de passe Supabase contenant des caractères spéciaux
+    // (crochets, arobase, etc.) ou sur le username "postgres.xxxxx" du pooler.
+    bool isSupabase = databaseUrl.Contains("supabase");
     Console.WriteLine($" DATABASE_URL détectée ({(isSupabase ? "Supabase" : "Render/autre")})");
-    Console.WriteLine($" PostgreSQL Host     : {host}");
-    Console.WriteLine($" PostgreSQL Port     : {port}");
-    Console.WriteLine($" PostgreSQL Database : {database}");
-    Console.WriteLine($" PostgreSQL User     : {username}");
 
-    connectionString =
-        $"Host={host};" +
-        $"Port={port};" +
-        $"Database={database};" +
-        $"Username={username};" +
-        $"Password={password};" +
-        $"SSL Mode=Require;" +
-        $"Trust Server Certificate=true;" +
-        (isSupabase ? "Pooling=false;" : "");
+    // Npgsql accepte les paramètres SSL directement en query string sur l'URL
+    string sslParams = "sslmode=require&Trust Server Certificate=true";
+    if (isSupabase) sslParams += "&Pooling=false";
+
+    // Ajoute les params SSL seulement s'ils ne sont pas déjà dans l'URL
+    if (!databaseUrl.Contains("sslmode"))
+    {
+        string sep = databaseUrl.Contains('?') ? "&" : "?";
+        databaseUrl += $"{sep}{sslParams}";
+    }
+
+    connectionString = databaseUrl;
 }
 else
 {
