@@ -1,0 +1,19 @@
+bin/
+obj/
+publish/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local secrets/config
+.env
+.env.*
+wwwroot/config.local.json
+
+# OS
+.DS_Store
+Thumbs.db

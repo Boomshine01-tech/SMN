@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: smartnest-vision-dashboard
+    runtime: static
+    buildCommand: bash build.sh
+    staticPublishPath: publish/wwwroot
+    branch: main
+    autoDeployTrigger: commit
+    routes:
+      - type: rewrite
+        source: /vision/*
+        destination: /index.html
+      - type: rewrite
+        source: /vision
+        destination: /index.html
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false

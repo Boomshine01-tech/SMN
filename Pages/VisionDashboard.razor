@@ -1,0 +1,296 @@
+@page "/vision"
+@page "/vision/{Camera}"
+
+@using System.Globalization
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>SMART-NEST — Vision</PageTitle>
+
+<div class="dashboard-header">
+    <div>
+        <div class="eyebrow">SMART-NEST / VISION</div>
+        <h1>Caméra @Camera</h1>
+        <p class="muted">Suivi du regroupement, de la mobilité et des conditions d'ambiance.</p>
+    </div>
+    <button class="refresh" @onclick="Load" disabled="@Loading">
+        @(Loading ? "Chargement..." : "Actualiser")
+    </button>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert error">@Error</div>
+}
+
+@if (Loading && Minutes.Count == 0)
+{
+    <div class="card loading">Chargement des données...</div>
+}
+else
+{
+    <section class="metrics">
+        <div class="metric-card">
+            <span>Poussins moyens</span>
+            <strong>@(Minutes.LastOrDefault()?.Count?.ToString("0.0") ?? "—")</strong>
+        </div>
+        <div class="metric-card">
+            <span>Regroupement</span>
+            <strong>@FormatPercent(Minutes.LastOrDefault()?.HuddleFrac)</strong>
+        </div>
+        <div class="metric-card">
+            <span>Mobilité</span>
+            <strong>@(Minutes.LastOrDefault()?.Mobility?.ToString("0.00") ?? "—")</strong>
+        </div>
+        <div class="metric-card">
+            <span>Température</span>
+            <strong>@(Minutes.LastOrDefault()?.Temperature?.ToString("0.0") ?? "—") °C</strong>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-title">
+            <div>
+                <h2>Regroupement</h2>
+                <span>3 dernières heures</span>
+            </div>
+            <span class="badge">@Minutes.Count points</span>
+        </div>
+
+        <div class="chart-wrap">
+            <svg viewBox="0 0 800 220" preserveAspectRatio="none" class="chart">
+                <line x1="0" y1="210" x2="800" y2="210" class="axis" />
+                <polyline fill="none" class="line" points="@Points(Minutes.Select(m => m.HuddleFrac), 800, 220)" />
+            </svg>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-title">
+            <div>
+                <h2>Dernières minutes</h2>
+                <span>Données enrichies</span>
+            </div>
+        </div>
+
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Heure</th>
+                        <th>Poussins</th>
+                        <th>Regroupés</th>
+                        <th>Mobilité</th>
+                        <th>°C</th>
+                        <th>% HR</th>
+                        <th>Sem.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var m in Minutes.TakeLast(10).Reverse())
+                {
+                    <tr>
+                        <td>@m.Ts.ToLocalTime().ToString("HH:mm")</td>
+                        <td>@(m.Count?.ToString("0.0") ?? "—")</td>
+                        <td>@FormatPercent(m.HuddleFrac)</td>
+                        <td>@(m.Mobility?.ToString("0.00") ?? "—")</td>
+                        <td>@(m.Temperature?.ToString("0.0") ?? "—")</td>
+                        <td>@(m.Humidity?.ToString("0") ?? "—")</td>
+                        <td>@(m.AgeWeek?.ToString() ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-title">
+            <div>
+                <h2>Alertes récentes</h2>
+                <span>Événements vision</span>
+            </div>
+        </div>
+
+        @if (Alerts.Count == 0)
+        {
+            <p class="muted">Aucune alerte récente.</p>
+        }
+        else
+        {
+            @foreach (var a in Alerts)
+            {
+                <div class="alert-row">
+                    <div>
+                        <strong>@a.Indicator</strong>
+                        <span>@a.Ts.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                    </div>
+                    <div>
+                        <span>@a.Direction</span>
+                        @if (a.Z.HasValue)
+                        {
+                            <span class="z-score">z = @a.Z.Value.ToString("+0.0;-0.0;0.0")</span>
+                        }
+                    </div>
+                </div>
+
+                @if (a.ImageUrl is not null)
+                {
+                    <img class="alert-image" src="@a.ImageUrl" alt="Capture de l'alerte" />
+                }
+            }
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string Camera { get; set; } = "cam1";
+
+    private AppConfig Config = new();
+    private List<MinuteRow> Minutes = new();
+    private List<AlertRow> Alerts = new();
+    private string? Error;
+    private bool Loading;
+
+    private sealed class AppConfig
+    {
+        [JsonPropertyName("supabaseUrl")]
+        public string SupabaseUrl { get; set; } = "";
+
+        [JsonPropertyName("supabaseAnonKey")]
+        public string SupabaseAnonKey { get; set; } = "";
+    }
+
+    private record MinuteRow(
+        [property: JsonPropertyName("ts")] DateTime Ts,
+        [property: JsonPropertyName("count_mean")] double? Count,
+        [property: JsonPropertyName("huddle_frac")] double? HuddleFrac,
+        [property: JsonPropertyName("mobility_chick_bw_s")] double? Mobility,
+        [property: JsonPropertyName("temperature")] double? Temperature,
+        [property: JsonPropertyName("humidity")] double? Humidity,
+        [property: JsonPropertyName("age_week")] int? AgeWeek);
+
+    private record AlertRow(
+        [property: JsonPropertyName("ts")] DateTime Ts,
+        [property: JsonPropertyName("indicator")] string Indicator,
+        [property: JsonPropertyName("direction")] string? Direction,
+        [property: JsonPropertyName("z")] double? Z,
+        [property: JsonPropertyName("image_path")] string? ImagePath)
+    {
+        public string? ImageUrl { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        Loading = true;
+        Error = null;
+
+        try
+        {
+            Config = await Http.GetFromJsonAsync<AppConfig>("config.json")
+                     ?? throw new InvalidOperationException("config.json est vide ou invalide.");
+
+            if (string.IsNullOrWhiteSpace(Config.SupabaseUrl) ||
+                Config.SupabaseUrl.Contains("VOTRE-PROJET", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Configure SUPABASE_URL et SUPABASE_ANON_KEY dans Render.");
+            }
+
+            Minutes = await Get<MinuteRow>(
+                $"v_minutes_enriched?camera=eq.{Uri.EscapeDataString(Camera)}&order=ts.desc&limit=180");
+            Minutes.Reverse();
+
+            Alerts = await Get<AlertRow>(
+                $"vision_alerts?camera=eq.{Uri.EscapeDataString(Camera)}&event_type=eq.start&order=ts.desc&limit=10");
+
+            foreach (var alert in Alerts.Where(a => !string.IsNullOrWhiteSpace(a.ImagePath)))
+            {
+                alert.ImageUrl = await Sign(alert.ImagePath!);
+            }
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private async Task<HttpRequestMessage> Req(HttpMethod method, string url)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Add("apikey", Config.SupabaseAnonKey);
+
+        // Optionnel : si un jeton Supabase Auth est présent dans localStorage,
+        // il sera utilisé pour respecter les politiques RLS.
+        var token = await JS.InvokeAsync<string?>("smartNest.getAccessToken");
+
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer",
+                string.IsNullOrWhiteSpace(token) ? Config.SupabaseAnonKey : token);
+
+        return request;
+    }
+
+    private async Task<List<T>> Get<T>(string path)
+    {
+        using var request = await Req(
+            HttpMethod.Get,
+            $"{Config.SupabaseUrl.TrimEnd('/')}/rest/v1/{path}");
+
+        var response = await Http.SendAsync(request);
+
+        var body = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Supabase {(int)response.StatusCode}: {body}");
+
+        return System.Text.Json.JsonSerializer.Deserialize<List<T>>(body) ?? new();
+    }
+
+    private async Task<string?> Sign(string imagePath)
+    {
+        var safePath = imagePath.TrimStart('/');
+        using var request = await Req(
+            HttpMethod.Post,
+            $"{Config.SupabaseUrl.TrimEnd('/')}/storage/v1/object/sign/{safePath}");
+
+        request.Content = JsonContent.Create(new { expiresIn = 3600 });
+
+        var response = await Http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        var json = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        return json is not null && json.TryGetValue("signedURL", out var signed)
+            ? $"{Config.SupabaseUrl.TrimEnd('/')}/storage/v1{signed}"
+            : null;
+    }
+
+    private static string FormatPercent(double? value)
+        => value.HasValue ? value.Value.ToString("P0") : "—";
+
+    private static string Points(IEnumerable<double?> values, double width, double height)
+    {
+        var v = values.ToList();
+        if (v.Count < 2) return "";
+
+        var max = Math.Max(
+            0.01,
+            v.Where(x => x.HasValue)
+             .Select(x => x!.Value)
+             .DefaultIfEmpty(0)
+             .Max());
+
+        return string.Join(" ", v.Select((x, i) =>
+            $"{(i * width / (v.Count - 1)).ToString("0.#", CultureInfo.InvariantCulture)}," +
+            $"{(height - (x ?? 0) / max * (height - 12) - 6).ToString("0.#", CultureInfo.InvariantCulture)}"));
+    }
+}
